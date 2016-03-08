@@ -1,0 +1,19 @@
+{
+  "name": "Lasers",
+  "version": "0.0.1",
+  "description": "Lasers",
+  "homepage": "https://example.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://git.pantsu.cat/work/boobhaha.git"
+  },
+  "author": "Eliot Whalan <ewhal@pantsu.cat>",
+  "bugs": {
+    "url": "https://git.pantsu.cat/work/boobhaha/issues"
+  },
+  "devDependencies": {
+    "grunt-contrib-cssmin": "^0.14.0",
+    "grunt-contrib-imagemin": "^1.0.0",
+    "grunt-contrib-uglify": "^0.10.0"
+  }
+}
