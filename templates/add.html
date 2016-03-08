@@ -1,0 +1,79 @@
+{{ define "content" }}
+<nav class="navbar navbar-default sidebar" role="navigation">
+	<div class="container-fluid">
+		<div class="navbar-header">
+			<button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-sidebar-navbar-collapse-1">
+				<span class="sr-only">Toggle navigation</span>
+				<span class="icon-bar"></span>
+				<span class="icon-bar"></span>
+				<span class="icon-bar"></span>
+			</button>
+		</div>
+		<div class="collapse navbar-collapse" id="bs-sidebar-navbar-collapse-1">
+			<ul class="nav navbar-nav">
+				<li ><a href="/admin">Home<span style="font-size:16px;" class="pull-right hidden-xs showopacity glyphicon glyphicon-home"></span></a></li>
+				<li ><a href="/admin/orders">Orders<span style="font-size:16px;" class="pull-right hidden-xs showopacity fa fa-archive"></span></a></li>
+				<li class="active"><a href="/admin/add">Add<span style="font-size:16px;" class="pull-right hidden-xs showopacity fa fa-plus"></span></a></li>
+				<li ><a href="/admin/remove">Remove<span style="font-size:16px;" class="pull-right hidden-xs showopacity fa fa-minus"></span></a></li>
+				<li ><a href="/admin/modify">Modify<span style="font-size:16px;" class="pull-right hidden-xs showopacity fa fa-pencil"></span></a></li>
+				<li ><a href="/admin/upload">Upload<span style="font-size:16px;" class="pull-right hidden-xs showopacity fa fa-file"></span></a></li>
+			</ul>
+		</div>
+	</div>
+</nav>
+<div class="container">
+	<div class="row">
+		<div class="col-md-6">
+			<form class="form-horizontal" id="register" action="" method="POST">
+				<fieldset>
+					<div id="legend">
+						<legend class=""></legend>
+					</div>
+					<div class="control-group">
+						<label class="control-label" for="productname">Product Name</label>
+						<div class="controls">
+							<input type="text" id="productname" name="productname" placeholder="" class="form-control input-lg" required>
+							<p class="help-block">Please provide the product name</p>
+						</div>
+					</div>
+
+					<div class="control-group">
+						<label class="control-label" for="description">Product Description</label>
+						<div class="controls">
+							<input type="text" id="description" name="description" placeholder="" class="form-control input-lg" required>
+							<p class="help-block">Product Description</p>
+						</div>
+					</div>
+					<div class="control-group">
+						<label class="control-label" for="files[]">Product Image</label>
+						<div class="controls">
+							<span class="btn btn-default btn-file">
+								Browse <input type="file" name="files[]">
+							</span>
+							<br>
+						</div>
+					</div>
+					<div class="control-group">
+						<label class="control-label" for="price">Product Price</label>
+						<div class="controls">
+							<input type="number" step="0.01" id="price" name="price" placeholder="" class="form-control input-lg" required>
+							<p class="help-block">Product Price</p>
+						</div>
+					</div>
+
+
+					<div class="control-group">
+						<!-- Button -->
+						<div class="controls">
+							<button class="btn btn-success">Register</button>
+						</div>
+					</div>
+				</fieldset>
+			</form>
+
+		</div>
+	</div>
+
+</div>
+
+{{ end }}

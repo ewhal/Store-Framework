@@ -1,0 +1,44 @@
+{{ define "content" }}
+<div class="container">
+	<div class="row">
+		<div class="col-md-6">
+			<form class="form-horizontal" id="Login" action="" method="POST">
+				<fieldset>
+					<div id="legend">
+						<legend class="">Login</legend>
+					</div>
+					<div class="control-group">
+						<label class="control-label" for="username">Username</label>
+						<div class="controls">
+							<input type="text" id="username" name="username" placeholder="" class="form-control input-lg" required>
+						</div>
+					</div>
+					<br>
+
+					<div class="control-group">
+						<label class="control-label" for="password">Password</label>
+						<div class="controls">
+							<input type="password" id="password" minlength="6" name="password" placeholder="" class="form-control input-lg" required>
+						</div>
+					</div>
+					<br>
+					<div class="control-group">
+						<div class="controls">
+							<label>Remember Me </label> <input type="checkbox" id="remember_me" aria-label="remember me" name="remember_me">
+						</div>
+					</div>
+					<br>
+
+					<div class="control-group">
+						<!-- Button -->
+						<div class="controls">
+							<button class="btn btn-success">Login</button>
+						</div>
+					</div>
+				</fieldset>
+			</form>
+
+		</div>
+	</div>
+</div>
+{{ end }}
