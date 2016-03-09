@@ -181,3 +181,12 @@ section{
 	cursor: inherit;
 	display: block;
 }
+
+.jumboimg {
+	background-image: url("../img/Laser_cutting_snowflakes.jpg");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: cover;
+	width: 100%;
+	height: 100%;
+}

@@ -3,7 +3,7 @@
 
 GOFLAGS ?= $(GOFLAGS:)
 
-all: install build mkdirs copy concat-css concat-js min-css min-js
+all: clean install build mkdirs copy concat-css concat-js min-css min-js
 
 mkdirs:
 	@mkdir -p ./build/css
