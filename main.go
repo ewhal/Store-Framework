@@ -284,7 +284,7 @@ func removeProductsHandler(w http.ResponseWriter, r *http.Request) {
 	case "POST":
 		r.ParseForm()
 		productname := r.FormValue("productname")
-		_, err := db.Exec("DELETE from products where productname = ?", productname)
+		_, err := db.Exec("DELETE from products where product_name = ?", productname)
 		fmt.Println(productname)
 
 		if err != nil {
