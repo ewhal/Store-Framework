@@ -10,7 +10,8 @@ mkdirs:
 	@mkdir -p ./build/js
 
 concat-css:
-	@cat ./static/css/*\.css > ./build/css/main.css.tmp
+	@cat ./static/css/bootstrap.css ./static/css/font-awesome.css ./static/css/main.css  ./static/css/creative.css ./static/css/style.css> ./build/css/main.css.tmp
+
 
 concat-js:
 	@cat ./static/js/*\.js > ./build/js/main.js.tmp
