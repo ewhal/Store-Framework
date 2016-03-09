@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 CREATE TABLE IF NOT EXISTS `products` (
 	`id` int(255) NOT NULL AUTO_INCREMENT,
 	`product_name` varchar(256) NOT NULL,
-	`dscription` varchar(512) NOT NULL,
+	`description` varchar(512) NOT NULL,
 	`image` varchar(60) NOT NULL,
 	`price` float(11) NOT NULL,
 	PRIMARY KEY (`id`)
