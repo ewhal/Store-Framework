@@ -21,11 +21,14 @@ import (
 )
 
 type Context struct {
-	Title string
+	Title    string
+	isAdmin  bool
+	loggedIn bool
 }
 type Products struct {
-	Products    string
-	Description []string
+	Title       string
+	Productname string
+	Description string
 	Image       string
 	Price       float32
 }
@@ -56,23 +59,24 @@ func setupDB() *sql.DB {
 	return db
 
 }
-func displayProducts(w http.ResponseWriter, tmpl string, products Products) {
-	t, err := template.ParseFiles("templates/layout.html", "templates/"+tmpl)
+
+func displayProducts(w http.ResponseWriter, tmpl string, p *Products) {
+	t, err := template.ParseFiles("templates/" + tmpl + ".html")
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	t.ExecuteTemplate(w, "layout", products)
+	err = t.ExecuteTemplate(w, "store.html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, context Context) {
-	t, err := template.ParseFiles("templates/layout.html", "templates/"+tmpl)
+	t, err := template.ParseFiles("templates/layout.html", "templates/"+tmpl+".html")
 	if err != nil {
 		log.Fatal(err)
 	}
-	t.ExecuteTemplate(w, "layout", context)
+	err = t.ExecuteTemplate(w, "layout", context)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -130,25 +134,25 @@ func adminAuth(w http.ResponseWriter, r *http.Request, title string, page string
 // Root domain handler
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	context := Context{Title: "Laser"}
-	renderTemplate(w, "index.html", context)
+	renderTemplate(w, "index", context)
 }
 
 //Authentication failure handler
 func authfailHandler(w http.ResponseWriter, r *http.Request) {
 	context := Context{Title: "Error"}
-	renderTemplate(w, "index.html", context)
+	renderTemplate(w, "index", context)
 }
 
 func faqHandler(w http.ResponseWriter, r *http.Request) {
 	context := Context{Title: "FAQ"}
-	renderTemplate(w, "faq.html", context)
+	renderTemplate(w, "faq", context)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		context := Context{Title: "Login"}
-		renderTemplate(w, "login.html", context)
+		renderTemplate(w, "login", context)
 	case "POST":
 		session := sessions.GetSession(r)
 
@@ -177,7 +181,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		context := Context{Title: "Register"}
-		renderTemplate(w, "register.html", context)
+		renderTemplate(w, "register", context)
 	case "POST":
 		r.ParseForm()
 		password := r.FormValue("password")
@@ -191,32 +195,42 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
-
 func storeHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["productname"]
-	context := Context{Title: key}
-	renderTemplate(w, "store.html", context)
+
+	var (
+		description string
+		image       string
+		price       float32
+	)
+
+	err := db.QueryRow("SELECT description, image, price FROM products WHERE product_name = ?", key).Scan(&description, &image, &price)
+	if err != nil {
+		log.Print(err)
+	}
+
+	displayProducts(w, "store", &Products{Title: key, Productname: key, Description: description, Image: image, Price: price})
 }
 
 func checkoutHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		context := Context{Title: "Checkout"}
-		renderTemplate(w, "checkout.html", context)
+		renderTemplate(w, "checkout", context)
 	case "POST":
 		r.ParseForm()
 	}
 }
 
 func adminHandler(w http.ResponseWriter, r *http.Request) {
-	adminAuth(w, r, "Admin", "admin.html")
+	adminAuth(w, r, "Admin", "admin")
 }
 
 func userHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Add admin permissions", "user.html")
+		adminAuth(w, r, "Add admin permissions", "user")
 	case "POST":
 		r.ParseForm()
 
@@ -231,6 +245,7 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 		//		if err != nil {
 		//			log.Print(err)
 		//		}
+		http.Redirect(w, r, "/admin/user", 302)
 
 	}
 }
@@ -238,34 +253,19 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 func ordersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Orders", "orders.html")
+		adminAuth(w, r, "Orders", "orders")
 	}
 
 }
 func addProductsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Add Products", "add.html")
+		adminAuth(w, r, "Add Products", "add")
 	case "POST":
 		r.ParseForm()
 		productname := r.FormValue("productname")
 		description := r.FormValue("description")
 		file := r.FormValue("files[]")
-
-		/*
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			defer file.Close()
-			fmt.Fprintf(w, "%v", handler.Header)
-			f, err := os.OpenFile("./build/img/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
-			if err != nil {
-			fmt.Println(err)
-				return
-			}
-			defer f.Close()
-			io.Copy(f, file) */
 		price := r.FormValue("price")
 
 		_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
@@ -273,6 +273,7 @@ func addProductsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 		}
+		http.Redirect(w, r, "/admin/add", 302)
 
 	}
 
@@ -280,7 +281,7 @@ func addProductsHandler(w http.ResponseWriter, r *http.Request) {
 func removeProductsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Remove Products", "remove.html")
+		adminAuth(w, r, "Remove Products", "remove")
 	case "POST":
 		r.ParseForm()
 		productname := r.FormValue("productname")
@@ -290,6 +291,7 @@ func removeProductsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 		}
+		http.Redirect(w, r, "/admin/remove", 302)
 
 	}
 
@@ -297,27 +299,13 @@ func removeProductsHandler(w http.ResponseWriter, r *http.Request) {
 func modifyProductsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Modify Products", "modify.html")
+		adminAuth(w, r, "Modify Products", "modify")
 	case "POST":
 		r.ParseForm()
 		productname := r.FormValue("productname")
 		description := r.FormValue("description")
 		file := r.FormValue("files[]")
 
-		/*
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			defer file.Close()
-			fmt.Fprintf(w, "%v", handler.Header)
-			f, err := os.OpenFile("./build/img/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
-			if err != nil {
-			fmt.Println(err)
-				return
-			}
-			defer f.Close()
-			io.Copy(f, file) */
 		price := r.FormValue("price")
 
 		_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
@@ -325,6 +313,7 @@ func modifyProductsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 		}
+		http.Redirect(w, r, "/admin/modify", 302)
 
 	}
 
@@ -333,7 +322,7 @@ func modifyProductsHandler(w http.ResponseWriter, r *http.Request) {
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		adminAuth(w, r, "Upload", "upload.html")
+		adminAuth(w, r, "Upload Product Image", "upload")
 	case "POST":
 		r.ParseForm()
 		file, handler, err := r.FormFile("files[]")
@@ -350,6 +339,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer f.Close()
 		io.Copy(f, file)
+		http.Redirect(w, r, "/admin/modify", 302)
 	}
 
 }
