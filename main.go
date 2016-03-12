@@ -2,31 +2,32 @@ package main
 
 import (
 	"database/sql"
-	//	"encoding/json"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"runtime"
+
 	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/negroni"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/goincremental/negroni-sessions"
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/gorilla/mux"
+	"github.com/unrolled/render"
 	"golang.org/x/crypto/bcrypt"
-	"html/template"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"runtime"
 )
 
 type Context struct {
-	Title    string
-	isAdmin  bool
-	loggedIn bool
+	IsAdmin  bool
+	LoggedIn bool
 }
 type Products struct {
-	Title       string
+	IsAdmin     bool
+	LoggedIn    bool
 	Productname string
 	Description string
 	Image       string
@@ -43,10 +44,10 @@ type tomlConfig struct {
 	DB database `toml:"database"`
 }
 
-var db *sql.DB = setupDB()
+var db *sql.DB = SetupDB()
 
 // Setup Database
-func setupDB() *sql.DB {
+func SetupDB() *sql.DB {
 
 	var config tomlConfig
 	if _, err := toml.DecodeFile("config.toml", &config); err != nil {
@@ -60,30 +61,7 @@ func setupDB() *sql.DB {
 
 }
 
-func displayProducts(w http.ResponseWriter, tmpl string, p *Products) {
-	t, err := template.ParseFiles("templates/" + tmpl + ".html")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-	err = t.ExecuteTemplate(w, "store.html", p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func renderTemplate(w http.ResponseWriter, tmpl string, context Context) {
-	t, err := template.ParseFiles("templates/layout.html", "templates/"+tmpl+".html")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = t.ExecuteTemplate(w, "layout", context)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func createUser(w http.ResponseWriter, r *http.Request) {
-
+func CreateUser(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	email := r.FormValue("email")
@@ -91,7 +69,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	if hash_err != nil {
 		log.Print(hash_err)
 	}
-	_, err := db.Exec("INSERT INTO users (user_name, user_password, user_email) VALUES (?, ?, ?)", username, hashed_password, email)
+	_, err := db.Exec("insert into users (user_name, user_password, user_email) values (?, ?, ?)", username, hashed_password, email)
 	if err != nil {
 		log.Print(err)
 	}
@@ -100,14 +78,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//Deletes session and redirects to rootHandler
-func logoutHandler(w http.ResponseWriter, r *http.Request) {
-	session := sessions.GetSession(r)
-	session.Delete("useremail")
-	http.Redirect(w, r, "/", 302)
-}
+func AdminAuth(w http.ResponseWriter, r *http.Request, title string) {
 
-func adminAuth(w http.ResponseWriter, r *http.Request, title string, page string) {
 	session := sessions.GetSession(r)
 	sess := session.Get("useremail")
 
@@ -121,8 +93,9 @@ func adminAuth(w http.ResponseWriter, r *http.Request, title string, page string
 
 	err := db.QueryRow("SELECT user_email, admin FROM users WHERE user_email = ?", sess).Scan(&useremail, &admin)
 	if admin == 1 {
-		context := Context{Title: title}
-		renderTemplate(w, page, context)
+		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		ren := render.New(render.Options{Directory: "templates", Layout: "layout", Extensions: []string{".tmpl", ".html"}, Charset: "UTF-8", IsDevelopment: false})
+		ren.HTML(w, http.StatusOK, title, context)
 	}
 	if err != nil && admin == 0 {
 		log.Print(err)
@@ -130,230 +103,88 @@ func adminAuth(w http.ResponseWriter, r *http.Request, title string, page string
 	}
 
 }
+func IsAdmin(r *http.Request) bool {
+	session := sessions.GetSession(r)
+	sess := session.Get("useremail")
 
-// Root domain handler
-func rootHandler(w http.ResponseWriter, r *http.Request) {
-	context := Context{Title: "Laser"}
-	renderTemplate(w, "index", context)
-}
-
-//Authentication failure handler
-func authfailHandler(w http.ResponseWriter, r *http.Request) {
-	context := Context{Title: "Error"}
-	renderTemplate(w, "index", context)
-}
-
-func faqHandler(w http.ResponseWriter, r *http.Request) {
-	context := Context{Title: "FAQ"}
-	renderTemplate(w, "faq", context)
-}
-
-func loginHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		context := Context{Title: "Login"}
-		renderTemplate(w, "login", context)
-	case "POST":
-		session := sessions.GetSession(r)
-
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-
-		var (
-			email           string
-			hashed_password string
-		)
-
-		err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
-		password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
-		if err != nil && password_err != nil {
-			log.Print(err)
-			log.Print(password_err)
-			http.Redirect(w, r, "/authfail", 301)
-		}
-
-		session.Set("useremail", email)
-		http.Redirect(w, r, "/", 302)
+	if sess == nil {
+		return false
 	}
-}
-
-func registerHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		context := Context{Title: "Register"}
-		renderTemplate(w, "register", context)
-	case "POST":
-		r.ParseForm()
-		password := r.FormValue("password")
-		password2 := r.FormValue("password_confirm")
-		if password == password2 {
-			createUser(w, r)
-		} else {
-			fmt.Fprintf(w, "Error passwords don't match")
-
-		}
-	}
-
-}
-func storeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["productname"]
-
 	var (
-		description string
-		image       string
-		price       float32
+		useremail string
+		admin     int
 	)
 
-	err := db.QueryRow("SELECT description, image, price FROM products WHERE product_name = ?", key).Scan(&description, &image, &price)
-	if err != nil {
+	err := db.QueryRow("SELECT user_email, admin FROM users WHERE user_email = ?", sess).Scan(&useremail, &admin)
+
+	if admin == 1 {
+		return true
+	}
+	if err != nil && admin == 0 {
+		return false
+	}
+
+	return false
+}
+
+func LoggedIn(r *http.Request) bool {
+	session := sessions.GetSession(r)
+	sess := session.Get("useremail")
+	// You can make the map key a constant to avoid typos/errors
+	if sess == nil {
+		return false
+	}
+	return true
+}
+
+func LoginUser(w http.ResponseWriter, r *http.Request) {
+	session := sessions.GetSession(r)
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	var (
+		email           string
+		hashed_password string
+	)
+
+	err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
+	password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
+	if err != nil && password_err != nil {
 		log.Print(err)
+		log.Print(password_err)
+		http.Redirect(w, r, "/authfail", 301)
 	}
 
-	displayProducts(w, "store", &Products{Title: key, Productname: key, Description: description, Image: image, Price: price})
+	session.Set("useremail", email)
+	http.Redirect(w, r, "/", 302)
 }
+func RegisterPost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	password := r.FormValue("password")
+	password2 := r.FormValue("password_confirm")
+	if password == password2 {
+		CreateUser(w, r)
+	} else {
+		fmt.Fprintf(w, "Error passwords don't match")
 
-func checkoutHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		context := Context{Title: "Checkout"}
-		renderTemplate(w, "checkout", context)
-	case "POST":
-		r.ParseForm()
-	}
-}
-
-func adminHandler(w http.ResponseWriter, r *http.Request) {
-	adminAuth(w, r, "Admin", "admin")
-}
-
-func userHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Add admin permissions", "user")
-	case "POST":
-		r.ParseForm()
-
-		username := r.FormValue("username")
-		id := r.FormValue("id")
-
-		fmt.Println(username)
-		fmt.Println(id)
-		//		query, err := db.Prepare("UPDATE users SET admin = 1 WHERE user_name = ?;")
-		//		err = query.Exec(username)
-
-		//		if err != nil {
-		//			log.Print(err)
-		//		}
-		http.Redirect(w, r, "/admin/user", 302)
-
-	}
-}
-
-func ordersHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Orders", "orders")
-	}
-
-}
-func addProductsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Add Products", "add")
-	case "POST":
-		r.ParseForm()
-		productname := r.FormValue("productname")
-		description := r.FormValue("description")
-		file := r.FormValue("files[]")
-		price := r.FormValue("price")
-
-		_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
-
-		if err != nil {
-			log.Print(err)
-		}
-		http.Redirect(w, r, "/admin/add", 302)
-
-	}
-
-}
-func removeProductsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Remove Products", "remove")
-	case "POST":
-		r.ParseForm()
-		productname := r.FormValue("productname")
-		_, err := db.Exec("DELETE from products where product_name = ?", productname)
-		fmt.Println(productname)
-
-		if err != nil {
-			log.Print(err)
-		}
-		http.Redirect(w, r, "/admin/remove", 302)
-
-	}
-
-}
-func modifyProductsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Modify Products", "modify")
-	case "POST":
-		r.ParseForm()
-		productname := r.FormValue("productname")
-		description := r.FormValue("description")
-		file := r.FormValue("files[]")
-
-		price := r.FormValue("price")
-
-		_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
-
-		if err != nil {
-			log.Print(err)
-		}
-		http.Redirect(w, r, "/admin/modify", 302)
-
-	}
-
-}
-
-func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		adminAuth(w, r, "Upload Product Image", "upload")
-	case "POST":
-		r.ParseForm()
-		file, handler, err := r.FormFile("files[]")
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer file.Close()
-		fmt.Fprintf(w, "%v", handler.Header)
-		f, err := os.OpenFile("./build/img/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer f.Close()
-		io.Copy(f, file)
-		http.Redirect(w, r, "/admin/modify", 302)
 	}
 
 }
 
 func main() {
 	ncpu := runtime.NumCPU()
-	if ncpu > 4 {
-		ncpu = 4
-	}
 	runtime.GOMAXPROCS(ncpu)
 	flag.Parse()
 
 	defer db.Close()
-
+	ren := render.New(render.Options{
+		Directory:     "templates",                // Specify what path to load the templates from.
+		Layout:        "layout",                   // Specify a layout template. Layouts can call {{ yield }} to render the current template or {{ partial "css" }} to render a partial from the current template.
+		Extensions:    []string{".tmpl", ".html"}, // Specify extensions to load for templates.
+		Charset:       "UTF-8",                    // Sets encoding for json and html content-types. Default is "UTF-8".
+		IsDevelopment: false,                      // Render will now recompile the templates on every HTML response.
+	})
 	r := mux.NewRouter()
 	n := negroni.Classic()
 
@@ -361,21 +192,217 @@ func main() {
 	n.Use(sessions.Sessions("global_session_store", store))
 
 	r.PathPrefix("/build").Handler(http.StripPrefix("/build", http.FileServer(http.Dir("build/"))))
-	r.HandleFunc("/", rootHandler)
-	r.HandleFunc("/faq", faqHandler)
-	r.HandleFunc("/login", loginHandler)
-	r.HandleFunc("/register", registerHandler)
-	r.HandleFunc("/store/{productname}", storeHandler)
-	r.HandleFunc("/checkout", checkoutHandler)
-	r.HandleFunc("/admin", adminHandler)
-	r.HandleFunc("/admin/users", userHandler)
-	r.HandleFunc("/admin/orders", ordersHandler)
-	r.HandleFunc("/admin/add", addProductsHandler)
-	r.HandleFunc("/admin/remove", removeProductsHandler)
-	r.HandleFunc("/admin/modify", modifyProductsHandler)
-	r.HandleFunc("/admin/upload", uploadHandler)
-	r.HandleFunc("/authfail", authfailHandler)
-	r.HandleFunc("/logout", logoutHandler)
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		ren.HTML(w, http.StatusOK, "index", context)
+
+	})
+	r.HandleFunc("/faq", func(w http.ResponseWriter, r *http.Request) {
+		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		ren.HTML(w, http.StatusOK, "faq", context)
+	})
+	r.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+			ren.HTML(w, http.StatusOK, "login", context)
+		case "POST":
+			LoginUser(w, r)
+		}
+
+	})
+	r.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+			ren.HTML(w, http.StatusOK, "register", context)
+
+		case "POST":
+		}
+
+	})
+	r.HandleFunc("/store", func(w http.ResponseWriter, r *http.Request) {
+		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		ren.HTML(w, http.StatusOK, "storemain", context)
+
+	})
+	r.HandleFunc("/store/{productname}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		key := vars["productname"]
+
+		var (
+			description string
+			image       string
+			price       float32
+		)
+
+		err := db.QueryRow("SELECT description, image, price FROM products WHERE product_name = ?", key).Scan(&description, &image, &price)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.NotFound(w, r)
+				return
+
+			} else {
+				log.Fatal(err)
+			}
+		}
+
+		ren.HTML(w, http.StatusOK, "store", &Products{Productname: key, Description: description, Image: image, Price: price})
+	})
+	r.HandleFunc("/checkout", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+			ren.HTML(w, http.StatusOK, "checkout", context)
+		case "POST":
+			r.ParseForm()
+		}
+
+	})
+
+	r.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
+		AdminAuth(w, r, "admin")
+	})
+
+	r.HandleFunc("/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "user")
+		case "POST":
+			r.ParseForm()
+
+			username := r.FormValue("username")
+			id := r.FormValue("id")
+
+			fmt.Println(username)
+			fmt.Println(id)
+			//		query, err := db.Prepare("UPDATE users SET admin = 1 WHERE user_name = ?;")
+			//		err = query.Exec(username)
+
+			//		if err != nil {
+			//			log.Print(err)
+			//		}
+			http.Redirect(w, r, "/admin/user", 302)
+
+		}
+
+	})
+
+	r.HandleFunc("/admin/orders", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "orders")
+		}
+
+	})
+
+	r.HandleFunc("/admin/add", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "add")
+		case "POST":
+			r.ParseForm()
+			productname := r.FormValue("productname")
+			description := r.FormValue("description")
+			file := r.FormValue("files[]")
+			price := r.FormValue("price")
+
+			_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
+
+			if err != nil {
+				log.Print(err)
+			}
+			http.Redirect(w, r, "/admin/add", 302)
+
+		}
+
+	})
+
+	r.HandleFunc("/admin/remove", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "remove")
+		case "POST":
+			r.ParseForm()
+			productname := r.FormValue("productname")
+			_, err := db.Exec("DELETE from products where product_name = ?", productname)
+			fmt.Println(productname)
+
+			if err != nil {
+				log.Print(err)
+			}
+			http.Redirect(w, r, "/admin/remove", 302)
+
+		}
+
+	})
+
+	r.HandleFunc("/admin/modify", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "modify")
+		case "POST":
+			r.ParseForm()
+			productname := r.FormValue("productname")
+			description := r.FormValue("description")
+			file := r.FormValue("files[]")
+
+			price := r.FormValue("price")
+
+			_, err := db.Exec("INSERT INTO products (product_name, description, image, price) VALUES (?, ?, ?, ?)", productname, description, file, price)
+
+			if err != nil {
+				log.Print(err)
+			}
+			http.Redirect(w, r, "/admin/modify", 302)
+
+		}
+
+	})
+
+	r.HandleFunc("/admin/upload", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			AdminAuth(w, r, "upload")
+		case "POST":
+			r.ParseForm()
+			file, handler, err := r.FormFile("files[]")
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			defer file.Close()
+			fmt.Fprintf(w, "%v", handler.Header)
+			f, err := os.OpenFile("./build/img/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			defer f.Close()
+			io.Copy(f, file)
+			http.Redirect(w, r, "/admin/modify", 302)
+		}
+
+	})
+
+	r.HandleFunc("/authfail", func(w http.ResponseWriter, r *http.Request) {
+
+		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		ren.HTML(w, http.StatusOK, "authfail", context)
+	})
+
+	r.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
+		data, _ := json.Marshal("{'API Test':'Works!'}")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Write(data)
+
+	})
+
+	r.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		session := sessions.GetSession(r)
+		session.Delete("useremail")
+		http.Redirect(w, r, "/", 302)
+	})
 
 	n.UseHandler(r)
 	n.Run(":8080")
