@@ -3,32 +3,47 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"runtime"
 
-	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/negroni"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/goincremental/negroni-sessions"
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
+	//	"github.com/stripe/stripe-go"
+	//	"github.com/stripe/stripe-go/currency"
 	"github.com/unrolled/render"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type Application struct {
+	DB     *sqlx.DB
+	Config Configuration
+	Debug  bool
+}
 
 // dicks
 type Context struct {
 	IsAdmin  bool
 	LoggedIn bool
 }
-type Products struct {
+
+type ProductPage struct {
 	Context
+	Products
+}
+type ProductsPage struct {
+	Context
+	Products []Products
+}
+type Products struct {
 	Id          int     `db:"id"`
 	Productname string  `db:"product_name"`
 	Description string  `db:"description"`
@@ -36,34 +51,45 @@ type Products struct {
 	Price       float32 `db:"price"`
 }
 
-type database struct {
-	User     string
-	Password string
-	DBName   string
+type Configuration struct {
+	DB dbConfig `json:"db"`
 }
 
-type tomlConfig struct {
-	DB database `toml:"database"`
+type dbConfig struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	Database string `json:"database"`
 }
-
-var db *sqlx.DB = SetupDB()
 
 // Setup Database
-func SetupDB() *sqlx.DB {
+func (config dbConfig) Connect() (*sqlx.DB, error) {
 
-	var config tomlConfig
-	if _, err := toml.DecodeFile("config.toml", &config); err != nil {
-		log.Print(err)
-	}
-	db, err := sqlx.Open("mysql", config.DB.User+":"+config.DB.Password+"@/"+config.DB.DBName+"?charset=utf8")
+	db, err := sqlx.Open("mysql", config.User+":"+config.Password+"@/"+config.Database+"?charset=utf8")
 	if err != nil {
 		panic(err)
 	}
-	return db
-
+	return db, nil
 }
 
-func CreateUser(w http.ResponseWriter, r *http.Request) {
+// LoadConfig loads external configuration file
+func LoadConfig(path string) Configuration {
+	file, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatal("Config File Missing. ", err)
+	}
+
+	var config Configuration
+	err = json.Unmarshal(file, &config)
+	if err != nil {
+		log.Fatal("Config Parse Error: ", err)
+	}
+
+	return config
+}
+
+func CreateUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	email := r.FormValue("email")
@@ -80,7 +106,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func AdminAuth(w http.ResponseWriter, r *http.Request, title string) {
+func AdminAuth(db *sqlx.DB, w http.ResponseWriter, r *http.Request, title string) {
 
 	session := sessions.GetSession(r)
 	sess := session.Get("useremail")
@@ -95,7 +121,7 @@ func AdminAuth(w http.ResponseWriter, r *http.Request, title string) {
 
 	err := db.QueryRow("SELECT user_email, admin FROM users WHERE user_email = ?", sess).Scan(&useremail, &admin)
 	if admin == 1 {
-		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		context := &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}
 		ren := render.New(render.Options{Directory: "templates", Layout: "layout", Extensions: []string{".tmpl", ".html"}, Charset: "UTF-8", IsDevelopment: false})
 		ren.HTML(w, http.StatusOK, title, context)
 	}
@@ -105,7 +131,44 @@ func AdminAuth(w http.ResponseWriter, r *http.Request, title string) {
 	}
 
 }
-func IsAdmin(r *http.Request) bool {
+
+func LoginUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
+	session := sessions.GetSession(r)
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	var (
+		email           string
+		hashed_password string
+	)
+
+	err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
+	password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
+	if err != nil && password_err != nil {
+		log.Print(err)
+		log.Print(password_err)
+		http.Redirect(w, r, "/authfail", 301)
+	}
+
+	session.Set("useremail", email)
+	http.Redirect(w, r, "/", 302)
+}
+
+func RegisterPost(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	password := r.FormValue("password")
+	password2 := r.FormValue("password_confirm")
+	if password == password2 {
+		CreateUser(db, w, r)
+	} else {
+		fmt.Fprintf(w, "Error passwords don't match")
+
+	}
+
+}
+
+func IsAdmin(db *sqlx.DB, r *http.Request) bool {
 	session := sessions.GetSession(r)
 	sess := session.Get("useremail")
 
@@ -129,7 +192,7 @@ func IsAdmin(r *http.Request) bool {
 	return false
 }
 
-func LoggedIn(r *http.Request) bool {
+func LoggedIn(db *sqlx.DB, r *http.Request) bool {
 	session := sessions.GetSession(r)
 	sess := session.Get("useremail")
 	// You can make the map key a constant to avoid typos/errors
@@ -139,46 +202,14 @@ func LoggedIn(r *http.Request) bool {
 	return true
 }
 
-func LoginUser(w http.ResponseWriter, r *http.Request) {
-	session := sessions.GetSession(r)
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	var (
-		email           string
-		hashed_password string
-	)
-
-	err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
-	password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
-	if err != nil && password_err != nil {
-		log.Print(err)
-		log.Print(password_err)
-		http.Redirect(w, r, "/authfail", 301)
-	}
-
-	session.Set("useremail", email)
-	http.Redirect(w, r, "/", 302)
-}
-func RegisterPost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	password := r.FormValue("password")
-	password2 := r.FormValue("password_confirm")
-	if password == password2 {
-		CreateUser(w, r)
-	} else {
-		fmt.Fprintf(w, "Error passwords don't match")
-
-	}
-
-}
-
 func main() {
-	ncpu := runtime.NumCPU()
-	runtime.GOMAXPROCS(ncpu)
-	flag.Parse()
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
+	config := LoadConfig("config.json")
+	db, err := config.DB.Connect()
+	if err != nil {
+		log.Print(err)
+	}
 	defer db.Close()
 	ren := render.New(render.Options{
 		Directory:     "templates",                // Specify what path to load the templates from.
@@ -194,32 +225,36 @@ func main() {
 	n.Use(sessions.Sessions("global_session_store", store))
 
 	r.PathPrefix("/build").Handler(http.StripPrefix("/build", http.FileServer(http.Dir("build/"))))
+
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-
-		ren.HTML(w, http.StatusOK, "index", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
+		ren.HTML(w, http.StatusOK, "index", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 
 	})
+
 	r.HandleFunc("/faq", func(w http.ResponseWriter, r *http.Request) {
-		ren.HTML(w, http.StatusOK, "faq", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
+		ren.HTML(w, http.StatusOK, "faq", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 	})
+
 	r.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			ren.HTML(w, http.StatusOK, "login", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
+			ren.HTML(w, http.StatusOK, "login", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 		case "POST":
-			LoginUser(w, r)
+			LoginUser(db, w, r)
 		}
 
 	})
+
 	r.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			ren.HTML(w, http.StatusOK, "register", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
+			ren.HTML(w, http.StatusOK, "register", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 
 		case "POST":
 		}
 
 	})
+
 	r.HandleFunc("/store", func(w http.ResponseWriter, r *http.Request) {
 		products := []Products{}
 
@@ -234,8 +269,10 @@ func main() {
 			}
 		}
 
-		ren.HTML(w, http.StatusOK, "storemain", &products)
+		p := &ProductsPage{Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}, products}
+		ren.HTML(w, http.StatusOK, "storemain", &p)
 	})
+
 	r.HandleFunc("/store/{productname}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		key := vars["productname"]
@@ -257,12 +294,13 @@ func main() {
 			}
 		}
 
-		ren.HTML(w, http.StatusOK, "store", &Products{Context: Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}, Productname: key, Description: description, Image: image, Price: price})
+		ren.HTML(w, http.StatusOK, "store", &ProductPage{Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}, Products{Productname: key, Description: description, Image: image, Price: price}})
 	})
+
 	r.HandleFunc("/checkout", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
+			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 		case "POST":
 			r.ParseForm()
 		}
@@ -270,13 +308,13 @@ func main() {
 	})
 
 	r.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
-		AdminAuth(w, r, "admin")
+		AdminAuth(db, w, r, "admin")
 	})
 
 	r.HandleFunc("/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "user")
+			AdminAuth(db, w, r, "user")
 		case "POST":
 			r.ParseForm()
 
@@ -300,7 +338,19 @@ func main() {
 	r.HandleFunc("/admin/orders", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "orders")
+			products := []Products{}
+
+			err := db.Select(&products, "SELECT * FROM users")
+			if err != nil {
+				if err == sql.ErrNoRows {
+					http.NotFound(w, r)
+					return
+
+				} else {
+					log.Fatal(err)
+				}
+			}
+
 		}
 
 	})
@@ -308,7 +358,7 @@ func main() {
 	r.HandleFunc("/admin/add", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "add")
+			AdminAuth(db, w, r, "add")
 		case "POST":
 			r.ParseForm()
 			productname := r.FormValue("productname")
@@ -330,7 +380,7 @@ func main() {
 	r.HandleFunc("/admin/remove", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "remove")
+			AdminAuth(db, w, r, "remove")
 		case "POST":
 			r.ParseForm()
 			productname := r.FormValue("productname")
@@ -348,7 +398,7 @@ func main() {
 	r.HandleFunc("/admin/modify", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "modify")
+			AdminAuth(db, w, r, "modify")
 		case "POST":
 			r.ParseForm()
 			productname := r.FormValue("productname")
@@ -371,7 +421,7 @@ func main() {
 	r.HandleFunc("/admin/upload", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			AdminAuth(w, r, "upload")
+			AdminAuth(db, w, r, "upload")
 		case "POST":
 			r.ParseForm()
 			file, handler, err := r.FormFile("files[]")
@@ -395,7 +445,7 @@ func main() {
 
 	r.HandleFunc("/authfail", func(w http.ResponseWriter, r *http.Request) {
 
-		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
+		context := &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}
 		ren.HTML(w, http.StatusOK, "authfail", context)
 	})
 

@@ -24,5 +24,41 @@
 	</div>
 </nav>
 <div class="container">
-	<h1> dicks</h1>
+	<input class="btn btn-default" type="button" value="Input">
+	<div class="panel panel-default">
+		<!-- Default panel contents -->
+		<div class="panel-heading">Panel heading</div>
+		<div class="panel-body">
+			<p>...</p>
+		</div>
+
+		<!-- Table -->
+		<table class="table">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>QTY</th>
+					<th>First Name</th>
+					<th>Last Name</th>
+					<th>Product Name</th>
+					<th>Address</th>
+					<th>Price</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{ range . }}
+				<tr>
+					<th scope="row">{{ .Id }}</th>
+					<td>{{ .first_name }}</td>
+					<td>{{ .last_name }}</td>
+					<td>{{ .product_name }}</td>
+					<td>{{ .address }}</td>
+					<td>{{ .price }}</td>
+
+				</tr>
+				{{ end }}
+			</tbody>
+		</table>
+	</div>
+
 </div>

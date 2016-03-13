@@ -38,9 +38,13 @@
 					<ul class="nav navbar-nav navbar-right">
 						<li><a href="/register">Register</a></li>
 						<li><a href="/login">Login </a></li>
+						{{ if .IsAdmin }}
 						<li><a href="/admin">Admin</a></li>
+						{{ end }}
+						{{ if .LoggedIn}}
 						<li><a href="/checkout">Checkout</a></li>
 						<li><a href="/logout">Logout</a></li>
+						{{ end }}
 
 					</ul>
 				</div>

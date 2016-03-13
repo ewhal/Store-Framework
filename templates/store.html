@@ -5,13 +5,13 @@
 	<div class="col-md-12">
 
 		<div class="thumbnail">
-			<img class="img-responsive" src="/build/img/{{.Image}}" alt="">
+			<img class="img-responsive" src="/build/img/{{.Products.Image}}" alt="">
 			<div class="caption-full">
 				<form class="form-inline pull-right">
-					<button type="submit" class="btn btn-success">${{.Price}}</button>
+					<button type="submit" class="btn btn-success">${{.Products.Price}}</button>
 				</form>
-				<h4><a href="#{{.Productname}}">{{.Productname}}</a></h4>
-				<p>{{.Description}}</p>
+				<h4><a href="#{{.Products.Productname}}">{{.Products.Productname}}</a></h4>
+				<p>{{.Products.Description}}</p>
 			</div>
 		</div>
 
