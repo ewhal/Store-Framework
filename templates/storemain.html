@@ -2,5 +2,13 @@
 <br>
 <br>
 <div class="container">
-	<h1>dicks</h1>
+	<div class="row">
+		{{ range . }}
+		<div class="col-xs-6 col-md-3">
+			<a href="/store/{{ .Productname}}" class="thumbnail">
+				<img src="/build/img/{{.Image }}" alt="...">
+			</a>
+		</div>
+		{{ end }}
+	</div>
 </div>

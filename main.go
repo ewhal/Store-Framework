@@ -17,21 +17,23 @@ import (
 	"github.com/goincremental/negroni-sessions"
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/gorilla/mux"
+	"github.com/jmoiron/sqlx"
 	"github.com/unrolled/render"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// dicks
 type Context struct {
 	IsAdmin  bool
 	LoggedIn bool
 }
 type Products struct {
-	IsAdmin     bool
-	LoggedIn    bool
-	Productname string
-	Description string
-	Image       string
-	Price       float32
+	Context
+	Id          int     `db:"id"`
+	Productname string  `db:"product_name"`
+	Description string  `db:"description"`
+	Image       string  `db:"image"`
+	Price       float32 `db:"price"`
 }
 
 type database struct {
@@ -44,16 +46,16 @@ type tomlConfig struct {
 	DB database `toml:"database"`
 }
 
-var db *sql.DB = SetupDB()
+var db *sqlx.DB = SetupDB()
 
 // Setup Database
-func SetupDB() *sql.DB {
+func SetupDB() *sqlx.DB {
 
 	var config tomlConfig
 	if _, err := toml.DecodeFile("config.toml", &config); err != nil {
 		log.Print(err)
 	}
-	db, err := sql.Open("mysql", config.DB.User+":"+config.DB.Password+"@/"+config.DB.DBName+"?charset=utf8")
+	db, err := sqlx.Open("mysql", config.DB.User+":"+config.DB.Password+"@/"+config.DB.DBName+"?charset=utf8")
 	if err != nil {
 		panic(err)
 	}
@@ -193,19 +195,17 @@ func main() {
 
 	r.PathPrefix("/build").Handler(http.StripPrefix("/build", http.FileServer(http.Dir("build/"))))
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-		ren.HTML(w, http.StatusOK, "index", context)
+
+		ren.HTML(w, http.StatusOK, "index", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
 
 	})
 	r.HandleFunc("/faq", func(w http.ResponseWriter, r *http.Request) {
-		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-		ren.HTML(w, http.StatusOK, "faq", context)
+		ren.HTML(w, http.StatusOK, "faq", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
 	})
 	r.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-			ren.HTML(w, http.StatusOK, "login", context)
+			ren.HTML(w, http.StatusOK, "login", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
 		case "POST":
 			LoginUser(w, r)
 		}
@@ -214,17 +214,27 @@ func main() {
 	r.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-			ren.HTML(w, http.StatusOK, "register", context)
+			ren.HTML(w, http.StatusOK, "register", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
 
 		case "POST":
 		}
 
 	})
 	r.HandleFunc("/store", func(w http.ResponseWriter, r *http.Request) {
-		context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-		ren.HTML(w, http.StatusOK, "storemain", context)
+		products := []Products{}
 
+		err := db.Select(&products, "SELECT * FROM products")
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.NotFound(w, r)
+				return
+
+			} else {
+				log.Fatal(err)
+			}
+		}
+
+		ren.HTML(w, http.StatusOK, "storemain", &products)
 	})
 	r.HandleFunc("/store/{productname}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -247,13 +257,12 @@ func main() {
 			}
 		}
 
-		ren.HTML(w, http.StatusOK, "store", &Products{Productname: key, Description: description, Image: image, Price: price})
+		ren.HTML(w, http.StatusOK, "store", &Products{Context: Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}, Productname: key, Description: description, Image: image, Price: price})
 	})
 	r.HandleFunc("/checkout", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			context := &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)}
-			ren.HTML(w, http.StatusOK, "checkout", context)
+			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(r), LoggedIn: LoggedIn(r)})
 		case "POST":
 			r.ParseForm()
 		}
@@ -326,7 +335,6 @@ func main() {
 			r.ParseForm()
 			productname := r.FormValue("productname")
 			_, err := db.Exec("DELETE from products where product_name = ?", productname)
-			fmt.Println(productname)
 
 			if err != nil {
 				log.Print(err)
@@ -368,14 +376,14 @@ func main() {
 			r.ParseForm()
 			file, handler, err := r.FormFile("files[]")
 			if err != nil {
-				fmt.Println(err)
+				log.Print(err)
 				return
 			}
 			defer file.Close()
 			fmt.Fprintf(w, "%v", handler.Header)
 			f, err := os.OpenFile("./build/img/"+handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
 			if err != nil {
-				fmt.Println(err)
+				log.Print(err)
 				return
 			}
 			defer f.Close()
@@ -392,7 +400,7 @@ func main() {
 	})
 
 	r.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
-		data, _ := json.Marshal("{'API Test':'Works!'}")
+		data, _ := json.Marshal("{'API Test': test }")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Write(data)
 
