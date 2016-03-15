@@ -19,6 +19,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	//	"github.com/stripe/stripe-go"
 	//	"github.com/stripe/stripe-go/currency"
+	"github.com/sendgrid/sendgrid-go"
 	"github.com/unrolled/render"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -42,6 +43,10 @@ type ProductPage struct {
 type ProductsPage struct {
 	Context
 	Products []Products
+}
+type OrdersPage struct {
+	Context
+	Orders []Products
 }
 type Products struct {
 	Id          int     `db:"id"`
@@ -202,6 +207,22 @@ func LoggedIn(db *sqlx.DB, r *http.Request) bool {
 	return true
 }
 
+func email() {
+	sendgridKey := os.Getenv("SENDGRID_API_KEY")
+	sg := sendgrid.NewSendGridClientWithApiKey(sendgridKey)
+	message := sendgrid.NewMail()
+	message.AddTo("community@sendgrid.com")
+	message.AddToName("SendGrid Community Dev Team")
+	message.SetSubject("SendGrid Testing")
+	message.SetText("WIN")
+	message.SetFrom("you@yourdomain.com")
+	if r := sg.Send(message); r == nil {
+		fmt.Println("Email sent!")
+	} else {
+		fmt.Println(r)
+	}
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -295,6 +316,39 @@ func main() {
 		}
 
 		ren.HTML(w, http.StatusOK, "store", &ProductPage{Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}, Products{Productname: key, Description: description, Image: image, Price: price}})
+	})
+	r.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			ren.HTML(w, http.StatusOK, "orders", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
+		case "POST":
+			//	products := []ProductsPage{}
+			//	session := sessions.GetSession(r)
+			//	sess := session.Get("useremail")
+
+			var (
+			//		useremail string
+			//		admin     int
+			)
+
+			//	err := db.QueryRow("SELECT user_email, admin FROM users WHERE user_email = ?", sess).Scan(&useremail, &admin)
+			if err != nil {
+				log.Print(err)
+			}
+
+			//	err := db.Select(&products, "SELECT * FROM orders")
+			if err != nil {
+				if err == sql.ErrNoRows {
+					http.NotFound(w, r)
+					return
+
+				} else {
+					log.Fatal(err)
+				}
+			}
+
+		}
+
 	})
 
 	r.HandleFunc("/checkout", func(w http.ResponseWriter, r *http.Request) {
