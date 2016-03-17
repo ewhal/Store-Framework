@@ -1,12 +1,9 @@
-<br>
-<br>
-<br>
-<div class="container">
+<div class="container-fluid">
 	<div class="row">
 		{{ range .Products }}
-		<div class="col-xs-6 col-md-3">
+		<div class="col-xs-6 col-md-3 store">
 			<a href="/store/{{ .Productname}}" class="thumbnail">
-				<img src="/build/img/{{.Image }}" alt="...">
+				<img src="/build/img/{{.Image }}" alt="{{.Productname}}">
 			</a>
 		</div>
 		{{ end }}

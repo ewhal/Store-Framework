@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`user_name` varchar(60) NOT NULL,
 	`user_email` varchar(60) NOT NULL,
 	`user_password` varchar(60) NOT NULL,
+	`token` varchar(33) NOT NULL,
 	`user_created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	`user_last_login` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
 	`admin` BOOLEAN NOT NULL,  

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -17,9 +18,10 @@ import (
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
-	//	"github.com/stripe/stripe-go"
-	//	"github.com/stripe/stripe-go/currency"
 	"github.com/sendgrid/sendgrid-go"
+	//	"github.com/stripe/stripe-go"
+	//	"github.com/stripe/stripe-go/charge"
+	//	"github.com/stripe/stripe-go/currency"
 	"github.com/unrolled/render"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,6 +36,7 @@ type Application struct {
 type Context struct {
 	IsAdmin  bool
 	LoggedIn bool
+	Token    string
 }
 
 type ProductPage struct {
@@ -44,9 +47,22 @@ type ProductsPage struct {
 	Context
 	Products []Products
 }
+
+type User struct {
+	Id       int    `db:"id"`
+	Username string `db:"user_name"`
+	Email    string `db:"user_email"`
+	Password string `db:"password"`
+	admin    bool   `db:"admin"`
+}
+
+type Orders struct {
+	Product []Products
+}
 type OrdersPage struct {
 	Context
-	Orders []Products
+	User
+	Orders []Orders
 }
 type Products struct {
 	Id          int     `db:"id"`
@@ -54,6 +70,7 @@ type Products struct {
 	Description string  `db:"description"`
 	Image       string  `db:"image"`
 	Price       float32 `db:"price"`
+	Stripeid    float32 `db:"stipe_id"`
 }
 
 type Configuration struct {
@@ -94,15 +111,22 @@ func LoadConfig(path string) Configuration {
 	return config
 }
 
+func randToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
 func CreateUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	email := r.FormValue("email")
 	hashed_password, hash_err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	token := randToken
 	if hash_err != nil {
 		log.Print(hash_err)
 	}
-	_, err := db.Exec("insert into users (user_name, user_password, user_email) values (?, ?, ?)", username, hashed_password, email)
+	_, err := db.Exec("insert into users (user_name, user_password, user_email, token) values (?, ?, ?, ?)", username, hashed_password, email, token)
 	if err != nil {
 		log.Print(err)
 	}
@@ -207,19 +231,20 @@ func LoggedIn(db *sqlx.DB, r *http.Request) bool {
 	return true
 }
 
-func email() {
+func sendMail(email string, token string, title string) {
+	//move to config.json
 	sendgridKey := os.Getenv("SENDGRID_API_KEY")
+	url := os.Getenv("DOMAIN")
 	sg := sendgrid.NewSendGridClientWithApiKey(sendgridKey)
 	message := sendgrid.NewMail()
 	message.AddTo("community@sendgrid.com")
 	message.AddToName("SendGrid Community Dev Team")
 	message.SetSubject("SendGrid Testing")
-	message.SetText("WIN")
+	message.SetText(url + "/forgot/" + token)
 	message.SetFrom("you@yourdomain.com")
-	if r := sg.Send(message); r == nil {
-		fmt.Println("Email sent!")
-	} else {
-		fmt.Println(r)
+	r := sg.Send(message)
+	if r == nil {
+		log.Print(r)
 	}
 }
 
@@ -357,6 +382,27 @@ func main() {
 			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 		case "POST":
 			r.ParseForm()
+		}
+
+	})
+
+	r.HandleFunc("/forgot", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
+		case "POST":
+			r.ParseForm()
+			useremail := r.FormValue("email")
+			var (
+				email string
+				token string
+			)
+			err := db.QueryRow("SELECT user_email, token FROM users WHERE user_email = ?", useremail).Scan(&email, &token)
+			sendMail(email, token, "forgotpassword")
+			if err != nil {
+				log.Print(err)
+			}
+
 		}
 
 	})
