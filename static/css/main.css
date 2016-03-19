@@ -203,6 +203,9 @@ body {
 	}
 }
 .thumbnail img {
-	height:300px;
+	height:250px;
 	width:100%;
+}
+.alert, .thumbnail {
+￼    margin-bottom: 0;
 }

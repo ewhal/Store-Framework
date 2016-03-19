@@ -17,7 +17,7 @@ concat-js:
 	@cat ./static/js/*\.js > ./build/js/main.js.tmp
 
 min-css:
-	@node ./node_modules/.bin/cleancss ./build/css/main.css.tmp > ./build/css/main.min.css && rm ./build/css/main.css.tmp
+	@node ./node_modules/.bin/cleancss --s0 ./build/css/main.css.tmp > ./build/css/main.min.css && rm ./build/css/main.css.tmp
 
 min-js:
 	@node ./node_modules/.bin/uglifyjs ./build/js/main.js.tmp > ./build/js/main.min.js && rm ./build/js/main.js.tmp

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/codegangsta/negroni"
+	"github.com/dchest/uniuri"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/goincremental/negroni-sessions"
 	"github.com/goincremental/negroni-sessions/cookiestore"
@@ -36,7 +36,6 @@ type Application struct {
 type Context struct {
 	IsAdmin  bool
 	LoggedIn bool
-	Token    string
 }
 
 type ProductPage struct {
@@ -53,6 +52,7 @@ type User struct {
 	Username string `db:"user_name"`
 	Email    string `db:"user_email"`
 	Password string `db:"password"`
+	Token    string `db:"token"`
 	admin    bool   `db:"admin"`
 }
 
@@ -111,22 +111,17 @@ func LoadConfig(path string) Configuration {
 	return config
 }
 
-func randToken() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return fmt.Sprintf("%x", b)
-}
-
-func CreateUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
+func createUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	email := r.FormValue("email")
 	hashed_password, hash_err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	token := randToken
+	token := uniuri.NewLen(128)
+
 	if hash_err != nil {
 		log.Print(hash_err)
 	}
-	_, err := db.Exec("insert into users (user_name, user_password, user_email, token) values (?, ?, ?, ?)", username, hashed_password, email, token)
+	_, err := db.Exec("INSERT INTO users (user_name, user_password, user_email, token) values (?, ?, ?, ?)", username, hashed_password, email, token)
 	if err != nil {
 		log.Print(err)
 	}
@@ -157,42 +152,6 @@ func AdminAuth(db *sqlx.DB, w http.ResponseWriter, r *http.Request, title string
 	if err != nil && admin == 0 {
 		log.Print(err)
 		http.Redirect(w, r, "/login", 301)
-	}
-
-}
-
-func LoginUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
-	session := sessions.GetSession(r)
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	var (
-		email           string
-		hashed_password string
-	)
-
-	err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
-	password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
-	if err != nil && password_err != nil {
-		log.Print(err)
-		log.Print(password_err)
-		http.Redirect(w, r, "/authfail", 301)
-	}
-
-	session.Set("useremail", email)
-	http.Redirect(w, r, "/", 302)
-}
-
-func RegisterPost(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	password := r.FormValue("password")
-	password2 := r.FormValue("password_confirm")
-	if password == password2 {
-		CreateUser(db, w, r)
-	} else {
-		fmt.Fprintf(w, "Error passwords don't match")
-
 	}
 
 }
@@ -286,7 +245,27 @@ func main() {
 		case "GET":
 			ren.HTML(w, http.StatusOK, "login", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 		case "POST":
-			LoginUser(db, w, r)
+			session := sessions.GetSession(r)
+
+			username := r.FormValue("username")
+			password := r.FormValue("password")
+
+			var (
+				email           string
+				hashed_password string
+			)
+
+			err := db.QueryRow("SELECT user_email, user_password FROM users WHERE user_name = ?", username).Scan(&email, &hashed_password)
+			password_err := bcrypt.CompareHashAndPassword([]byte(hashed_password), []byte(password))
+			if err != nil && password_err != nil {
+				log.Print(err)
+				log.Print(password_err)
+				http.Redirect(w, r, "/authfail", 301)
+			}
+
+			session.Set("useremail", email)
+			http.Redirect(w, r, "/", 302)
+
 		}
 
 	})
@@ -295,8 +274,15 @@ func main() {
 		switch r.Method {
 		case "GET":
 			ren.HTML(w, http.StatusOK, "register", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
-
 		case "POST":
+			r.ParseForm()
+			password := r.FormValue("password")
+			password2 := r.FormValue("password_confirm")
+			if password != password2 {
+				fmt.Fprintf(w, "Error passwords don't match")
+			}
+			createUser(db, w, r)
+
 		}
 
 	})
@@ -389,7 +375,7 @@ func main() {
 	r.HandleFunc("/forgot", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			ren.HTML(w, http.StatusOK, "checkout", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
+			ren.HTML(w, http.StatusOK, "forgot", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
 		case "POST":
 			r.ParseForm()
 			useremail := r.FormValue("email")
@@ -398,13 +384,77 @@ func main() {
 				token string
 			)
 			err := db.QueryRow("SELECT user_email, token FROM users WHERE user_email = ?", useremail).Scan(&email, &token)
-			sendMail(email, token, "forgotpassword")
+			//sendMail(email, token, "forgotpassword")
 			if err != nil {
 				log.Print(err)
 			}
 
 		}
 
+	})
+	r.HandleFunc("/forgot/{token}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			vars := mux.Vars(r)
+			key := vars["token"]
+
+			var (
+				email string
+				token string
+			)
+
+			err := db.QueryRow("SELECT user_email, token FROM users WHERE token = ?", key).Scan(&email, &token)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					http.NotFound(w, r)
+					return
+
+				} else {
+					log.Fatal(err)
+				}
+			}
+			ren.HTML(w, http.StatusOK, "reset", &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)})
+		case "POST":
+			vars := mux.Vars(r)
+			key := vars["token"]
+			var (
+				email string
+				token string
+			)
+
+			err := db.QueryRow("SELECT user_email, token FROM users WHERE token = ?", key).Scan(&email, &token)
+
+			if err != nil {
+				if err == sql.ErrNoRows {
+					http.NotFound(w, r)
+					return
+
+				}
+				log.Print(err)
+			}
+			if token != key {
+				http.NotFound(w, r)
+				return
+
+			}
+			r.ParseForm()
+
+			password := r.FormValue("password")
+
+			hashed_password, hash_err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			if hash_err != nil {
+				log.Print(hash_err)
+			}
+
+			newToken := uniuri.NewLen(128)
+			_, update_err := db.Exec("UPDATE users SET user_password=?, token=?  WHERE user_email=?", hashed_password, newToken, email)
+			if update_err != nil {
+				log.Print(err)
+			}
+
+			http.Redirect(w, r, "/login", 302)
+
+		}
 	})
 
 	r.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
@@ -438,7 +488,7 @@ func main() {
 	r.HandleFunc("/admin/orders", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
-			products := []Products{}
+			products := []ProductPage{}
 
 			err := db.Select(&products, "SELECT * FROM users")
 			if err != nil {
