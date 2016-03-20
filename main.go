@@ -2,12 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/smtp"
 	"os"
 	"runtime"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
-	"github.com/sendgrid/sendgrid-go"
 	//	"github.com/stripe/stripe-go"
 	//	"github.com/stripe/stripe-go/charge"
 	//	"github.com/stripe/stripe-go/currency"
@@ -26,11 +27,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Application struct {
-	DB     *sqlx.DB
-	Config Configuration
-	Debug  bool
-}
+var (
+	e SMTPInfo
+)
 
 // dicks
 type Context struct {
@@ -74,7 +73,16 @@ type Products struct {
 }
 
 type Configuration struct {
-	DB dbConfig `json:"db"`
+	DB     dbConfig `json:"db"`
+	SMTP   SMTPInfo `json:"email"`
+	Stripe string   `json:"stripe"`
+}
+type SMTPInfo struct {
+	Username string
+	Password string
+	Hostname string
+	Port     int
+	From     string
 }
 
 type dbConfig struct {
@@ -190,21 +198,33 @@ func LoggedIn(db *sqlx.DB, r *http.Request) bool {
 	return true
 }
 
-func sendMail(email string, token string, title string) {
-	//move to config.json
-	sendgridKey := os.Getenv("SENDGRID_API_KEY")
-	url := os.Getenv("DOMAIN")
-	sg := sendgrid.NewSendGridClientWithApiKey(sendgridKey)
-	message := sendgrid.NewMail()
-	message.AddTo("community@sendgrid.com")
-	message.AddToName("SendGrid Community Dev Team")
-	message.SetSubject("SendGrid Testing")
-	message.SetText(url + "/forgot/" + token)
-	message.SetFrom("you@yourdomain.com")
-	r := sg.Send(message)
-	if r == nil {
-		log.Print(r)
+func SendEmail(to, subject, body string) error {
+	auth := smtp.PlainAuth("", e.Username, e.Password, e.Hostname)
+
+	header := make(map[string]string)
+	header["From"] = e.From
+	header["To"] = to
+	header["Subject"] = subject
+	header["MIME-Version"] = "1.0"
+	header["Content-Type"] = `text/plain; charset="utf-8"`
+	header["Content-Transfer-Encoding"] = "base64"
+
+	message := ""
+	for k, v := range header {
+		message += fmt.Sprintf("%s: %s\r\n", k, v)
 	}
+	message += "\r\n" + base64.StdEncoding.EncodeToString([]byte(body))
+
+	// Send the email
+	err := smtp.SendMail(
+		fmt.Sprintf("%s:%d", e.Hostname, e.Port),
+		auth,
+		e.From,
+		[]string{to},
+		[]byte(message),
+	)
+
+	return err
 }
 
 func main() {

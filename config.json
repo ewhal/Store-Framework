@@ -5,5 +5,12 @@
 		"host": "localhost",
 		"port": "3306",
 		"database": "negro"
+	},
+	"Email": {
+		"Username": "",
+		"Password": "",
+		"Hostname": "",
+		"Port": 25,
+		"From": ""
 	}
 }
