@@ -133,6 +133,10 @@ func createUser(db *sqlx.DB, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Print(err)
 	}
+	errmail := sendEmail(email, "", "https://"+email+"/forgot"+token)
+	if errmail != nil {
+		log.Print(err)
+	}
 
 	http.Redirect(w, r, "/login", 302)
 
@@ -198,7 +202,7 @@ func LoggedIn(db *sqlx.DB, r *http.Request) bool {
 	return true
 }
 
-func SendEmail(to, subject, body string) error {
+func sendEmail(to, subject, body string) error {
 	auth := smtp.PlainAuth("", e.Username, e.Password, e.Hostname)
 
 	header := make(map[string]string)
@@ -406,6 +410,10 @@ func main() {
 			err := db.QueryRow("SELECT user_email, token FROM users WHERE user_email = ?", useremail).Scan(&email, &token)
 			//sendMail(email, token, "forgotpassword")
 			if err != nil {
+				log.Print(err)
+			}
+			errmail := sendEmail(email, "forgot password", "https://"+email+"/forgot"+token)
+			if errmail != nil {
 				log.Print(err)
 			}
 
@@ -617,13 +625,6 @@ func main() {
 
 		context := &Context{IsAdmin: IsAdmin(db, r), LoggedIn: LoggedIn(db, r)}
 		ren.HTML(w, http.StatusOK, "authfail", context)
-	})
-
-	r.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
-		data, _ := json.Marshal("{'API Test': test }")
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Write(data)
-
 	})
 
 	r.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
