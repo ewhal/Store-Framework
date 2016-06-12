@@ -16,3 +16,9 @@ install:
   - go get github.com/stripe/stripe-go/currency
   - go get github.com/unrolled/render
   - go get golang.org/x/crypto/bcrypt 
+  - source ~/.nvm/nvm.sh 
+  - nvm ls-remote
+  - nvm install stable
+  - nvm use stable
+  - npm install
+
