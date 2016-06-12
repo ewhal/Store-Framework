@@ -1,15 +1,15 @@
 {
-  "name": "Lasers",
+  "name": "storeframework",
   "version": "0.0.1",
-  "description": "Lasers",
+  "description": "storeframework",
   "homepage": "https://example.com/",
   "repository": {
     "type": "git",
-    "url": "https://git.pantsu.cat/work/boobhaha.git"
+    "url": "https://github.com/ewhal/store-framework"
   },
   "author": "Eliot Whalan <ewhal@pantsu.cat>",
   "bugs": {
-    "url": "https://git.pantsu.cat/work/boobhaha/issues"
+    "url": "https://github.com/ewhal/store-framework/issues"
   },
   "devDependencies": {
     "grunt-contrib-cssmin": "^0.14.0",

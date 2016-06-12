@@ -1,4 +1,4 @@
-#Laser cutting
+#StoreFramework [![Build Status](https://travis-ci.org/ewhal/Store-Framework.svg?branch=master)](https://travis-ci.org/ewhal/Store-Framework)
 
 ##Dependencies
 *	go get"github.com/codegangsta/negroni"
