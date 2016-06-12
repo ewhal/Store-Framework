@@ -4,15 +4,15 @@ go:
   - tip
 
 install:
-  - go get https://github.com/codegangsta/negroni
-  - go get https://github.com/dchest/uniuri
-  - go get https://github.com/go-sql-driver/mysql
-  - go get https://github.com/goincremental/negroni-sessions
-  - go get https://github.com/goincremental/negroni-sessions/cookiestore
-  - go get https://github.com/gorilla/mux
-  - go get https://github.com/jmoiron/sqlx
-  - go get https://github.com/stripe/stripe-go
-  - go get https://github.com/stripe/stripe-go/charge
-  - go get https://github.com/stripe/stripe-go/currency
-  - go get https://github.com/unrolled/render
-  - go get https://github.com/x/crypto/bcrypt
+  - go get github.com/codegangsta/negroni
+  - go get github.com/dchest/uniuri
+  - go get github.com/go-sql-driver/mysql
+  - go get github.com/goincremental/negroni-sessions
+  - go get github.com/goincremental/negroni-sessions/cookiestore
+  - go get github.com/gorilla/mux
+  - go get github.com/jmoiron/sqlx
+  - go get github.com/stripe/stripe-go
+  - go get github.com/stripe/stripe-go/charge
+  - go get github.com/stripe/stripe-go/currency
+  - go get github.com/unrolled/render
+  - go get github.com/x/crypto/bcrypt
