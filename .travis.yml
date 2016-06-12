@@ -15,4 +15,4 @@ install:
   - go get github.com/stripe/stripe-go/charge
   - go get github.com/stripe/stripe-go/currency
   - go get github.com/unrolled/render
-  - go get github.com/x/crypto/bcrypt
+  - go get golang.org/x/crypto/bcrypt 
