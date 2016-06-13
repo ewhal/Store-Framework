@@ -12,8 +12,8 @@
     "url": "https://github.com/ewhal/store-framework/issues"
   },
   "devDependencies": {
-    "grunt-contrib-cssmin": "^0.14.0",
+    "grunt-contrib-cssmin": "^1.0.1",
     "grunt-contrib-imagemin": "^1.0.0",
-    "grunt-contrib-uglify": "^0.10.0"
+    "grunt-contrib-uglify": "^1.0.1"
   }
 }
